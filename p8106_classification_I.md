@@ -169,3 +169,186 @@ model.glm <- train(x = dat[rowTrain, 1:8],
                    metric = "ROC",
                    trControl = ctrl)
 ```
+
+## Penalized logistic regression
+
+``` r
+glmnGrid <- expand.grid(.alpha = seq(0, 1, length = 21),
+                        .lambda = exp(seq(-8, -1, length = 50)))
+set.seed(1)
+model.glmn <- train(x = dat[rowTrain, 1:8],
+                    y = dat$diabetes[rowTrain],
+                    method = "glmnet",
+                    tuneGrid = glmnGrid,
+                    metric = "ROC",
+                    trControl = ctrl)
+model.glmn$bestTune
+```
+
+    ##    alpha    lambda
+    ## 93  0.05 0.1353353
+
+``` r
+myCol <- rainbow(25)
+myPar <- list(superpose.symbol = list(col = myCol),
+              superpose.line = list(col = myCol))
+
+plot(model.glmn, par.settings = myPar, xTrans = function(x) log(x))
+```
+
+![](p8106_classification_I_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
+
+## GAM model
+
+``` r
+set.seed(1)
+model.gam <- train(x = dat[rowTrain, 1:8],
+                   y = dat$diabetes[rowTrain],
+                   method = "gam",
+                   metric = "ROC",
+                   trControl = ctrl)
+
+model.gam$finalModel
+```
+
+    ## 
+    ## Family: binomial 
+    ## Link function: logit 
+    ## 
+    ## Formula:
+    ## .outcome ~ s(pregnant) + s(pressure) + s(age) + s(triceps) + 
+    ##     s(glucose) + s(insulin) + s(mass) + s(pedigree)
+    ## 
+    ## Estimated degrees of freedom:
+    ## 0.0001 0.0000 7.5614 1.3490 2.2830 0.0000 0.0000 
+    ## 1.6659  total = 13.86 
+    ## 
+    ## UBRE score: -0.0602217
+
+``` r
+plot(model.gam$finalModel, select = 3)
+```
+
+![](p8106_classification_I_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
+
+## MARS model
+
+``` r
+set.seed(1)
+model.mars <- train(x = dat[rowTrain, 1:8],
+                    y = dat$diabetes[rowTrain],
+                    method = "earth",
+                    tuneGrid = expand.grid(degree = 1:4,
+                                           nprune = 2:20),
+                    metric = "ROC",
+                    trControl = ctrl)
+
+plot(model.mars)
+```
+
+![](p8106_classification_I_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
+
+``` r
+coef(model.mars$finalModel)
+```
+
+    ##       (Intercept)    h(glucose-117)         h(29-age) h(1.258-pedigree) 
+    ##        0.47846627        0.04364894       -0.21648937       -1.34468216 
+    ##     h(37-triceps) 
+    ##       -0.04894219
+
+``` r
+pdp::partial(model.mars, pred.var = c("age"), grid.resolution = 200) %>% autoplot()
+```
+
+![](p8106_classification_I_files/figure-gfm/unnamed-chunk-10-2.png)<!-- -->
+
+``` r
+vip(model.mars$finalModel)
+```
+
+![](p8106_classification_I_files/figure-gfm/unnamed-chunk-10-3.png)<!-- -->
+
+## Compare models
+
+``` r
+res <- resamples(list(GLM = model.glm,
+                      GLMN = model.glmn,
+                      GAM = model.gam,
+                      MARS = model.mars))
+
+summary(res)
+```
+
+    ## 
+    ## Call:
+    ## summary.resamples(object = res)
+    ## 
+    ## Models: GLM, GLMN, GAM, MARS 
+    ## Number of resamples: 10 
+    ## 
+    ## ROC 
+    ##       Min. 1st Qu. Median      Mean   3rd Qu.      Max. NA's
+    ## GLM  0.760 0.79125 0.8175 0.8329971 0.8754386 0.9298246    0
+    ## GLMN 0.755 0.80750 0.8275 0.8406813 0.8881579 0.9181287    0
+    ## GAM  0.660 0.78625 0.8200 0.8174357 0.8412281 0.9210526    0
+    ## MARS 0.705 0.76625 0.7950 0.8042836 0.8478070 0.8976608    0
+    ## 
+    ## Sens 
+    ##      Min.   1st Qu.    Median      Mean   3rd Qu.      Max. NA's
+    ## GLM  0.75 0.8500000 0.8947368 0.8686842 0.9000000 0.9473684    0
+    ## GLMN 0.85 0.8625000 0.9000000 0.9092105 0.9473684 1.0000000    0
+    ## GAM  0.75 0.8500000 0.9000000 0.8794737 0.9355263 1.0000000    0
+    ## MARS 0.75 0.8421053 0.8500000 0.8531579 0.8875000 0.9473684    0
+    ## 
+    ## Spec 
+    ##      Min.   1st Qu.    Median      Mean   3rd Qu.      Max. NA's
+    ## GLM   0.3 0.4250000 0.5777778 0.5222222 0.6000000 0.7000000    0
+    ## GLMN  0.3 0.3500000 0.5000000 0.4822222 0.5888889 0.6666667    0
+    ## GAM   0.3 0.4250000 0.5500000 0.5766667 0.7000000 0.8888889    0
+    ## MARS  0.2 0.4111111 0.5000000 0.5022222 0.6000000 0.7777778    0
+
+``` r
+bwplot(res, metric = "ROC")
+```
+
+![](p8106_classification_I_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->
+
+## Test data performance
+
+``` r
+glm.pred <- predict(model.glm, newdata = dat[-rowTrain,], type = "prob")[,2]
+glmn.pred <- predict(model.glmn, newdata = dat[-rowTrain,], type = "prob")[,2]
+gam.pred <- predict(model.gam, newdata = dat[-rowTrain,], type = "prob")[,2]
+mars.pred <- predict(model.mars, newdata = dat[-rowTrain,], type = "prob")[,2]
+
+roc.glm <- roc(dat$diabetes[-rowTrain], glm.pred)
+roc.glmn <- roc(dat$diabetes[-rowTrain], glmn.pred)
+roc.gam <- roc(dat$diabetes[-rowTrain], gam.pred)
+roc.mars <- roc(dat$diabetes[-rowTrain], mars.pred)
+
+auc <- c(roc.glm$auc[1], roc.glmn$auc[1], 
+         roc.gam$auc[1], roc.mars$auc[1])
+
+modelNames <- c("glm", "glmn", "gam", "mars")
+
+ggroc(list(roc.glm, roc.glmn, roc.gam, roc.mars), legacy.axes = TRUE) + 
+  scale_color_discrete(labels = paste0(modelNames, " (", round(auc,3),")"),
+                       name = "Models (AUC)") +
+  geom_abline(intercept = 0, slope = 1, color = "grey")
+```
+
+![](p8106_classification_I_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
+
+``` r
+## using plot.roc
+plot(roc.glm, legacy.axes = TRUE)
+plot(roc.glmn, col = 2, add = TRUE)
+plot(roc.gam, col = 3, add = TRUE)
+plot(roc.mars, col = 4, add = TRUE)
+
+legend("bottomright", legend = paste0(modelNames, ": ", round(auc,3)),
+       col = 1:4, lwd = 2)
+```
+
+![](p8106_classification_I_files/figure-gfm/unnamed-chunk-12-2.png)<!-- -->

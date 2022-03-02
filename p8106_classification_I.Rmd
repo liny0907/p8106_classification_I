@@ -88,11 +88,103 @@ model.glm <- train(x = dat[rowTrain, 1:8],
                    trControl = ctrl)
 ```
 
+## Penalized logistic regression
+
+```{r}
+glmnGrid <- expand.grid(.alpha = seq(0, 1, length = 21),
+                        .lambda = exp(seq(-8, -1, length = 50)))
+set.seed(1)
+model.glmn <- train(x = dat[rowTrain, 1:8],
+                    y = dat$diabetes[rowTrain],
+                    method = "glmnet",
+                    tuneGrid = glmnGrid,
+                    metric = "ROC",
+                    trControl = ctrl)
+model.glmn$bestTune
+
+myCol <- rainbow(25)
+myPar <- list(superpose.symbol = list(col = myCol),
+              superpose.line = list(col = myCol))
+
+plot(model.glmn, par.settings = myPar, xTrans = function(x) log(x))
+```
+
+## GAM model
+```{r}
+set.seed(1)
+model.gam <- train(x = dat[rowTrain, 1:8],
+                   y = dat$diabetes[rowTrain],
+                   method = "gam",
+                   metric = "ROC",
+                   trControl = ctrl)
+
+model.gam$finalModel
+plot(model.gam$finalModel, select = 3)
+```
 
 
+## MARS model
 
+```{r}
+set.seed(1)
+model.mars <- train(x = dat[rowTrain, 1:8],
+                    y = dat$diabetes[rowTrain],
+                    method = "earth",
+                    tuneGrid = expand.grid(degree = 1:4,
+                                           nprune = 2:20),
+                    metric = "ROC",
+                    trControl = ctrl)
 
+plot(model.mars)
+coef(model.mars$finalModel)
 
+pdp::partial(model.mars, pred.var = c("age"), grid.resolution = 200) %>% autoplot()
+
+vip(model.mars$finalModel)
+```
+
+## Compare models
+```{r}
+res <- resamples(list(GLM = model.glm,
+                      GLMN = model.glmn,
+                      GAM = model.gam,
+                      MARS = model.mars))
+
+summary(res)
+bwplot(res, metric = "ROC")
+```
+
+## Test data performance
+```{r}
+glm.pred <- predict(model.glm, newdata = dat[-rowTrain,], type = "prob")[,2]
+glmn.pred <- predict(model.glmn, newdata = dat[-rowTrain,], type = "prob")[,2]
+gam.pred <- predict(model.gam, newdata = dat[-rowTrain,], type = "prob")[,2]
+mars.pred <- predict(model.mars, newdata = dat[-rowTrain,], type = "prob")[,2]
+
+roc.glm <- roc(dat$diabetes[-rowTrain], glm.pred)
+roc.glmn <- roc(dat$diabetes[-rowTrain], glmn.pred)
+roc.gam <- roc(dat$diabetes[-rowTrain], gam.pred)
+roc.mars <- roc(dat$diabetes[-rowTrain], mars.pred)
+
+auc <- c(roc.glm$auc[1], roc.glmn$auc[1], 
+         roc.gam$auc[1], roc.mars$auc[1])
+
+modelNames <- c("glm", "glmn", "gam", "mars")
+
+ggroc(list(roc.glm, roc.glmn, roc.gam, roc.mars), legacy.axes = TRUE) + 
+  scale_color_discrete(labels = paste0(modelNames, " (", round(auc,3),")"),
+                       name = "Models (AUC)") +
+  geom_abline(intercept = 0, slope = 1, color = "grey")
+
+## using plot.roc
+plot(roc.glm, legacy.axes = TRUE)
+plot(roc.glmn, col = 2, add = TRUE)
+plot(roc.gam, col = 3, add = TRUE)
+plot(roc.mars, col = 4, add = TRUE)
+
+legend("bottomright", legend = paste0(modelNames, ": ", round(auc,3)),
+       col = 1:4, lwd = 2)
+```
 
 
 
