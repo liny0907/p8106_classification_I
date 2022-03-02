@@ -17,3 +17,82 @@ library(pdp)
 library(vip)
 library(AppliedPredictiveModeling)
 ```
+
+## Dataset
+```{r}
+data(PimaIndiansDiabetes2)
+dat <- na.omit(PimaIndiansDiabetes2)
+
+theme1 <- transparentTheme(trans = 0.4)
+trellis.par.set(theme1)
+
+featurePlot(x = dat[, 1:8],
+            y = dat$diabetes,
+            scales = list(x = list(relation = "free"),
+                          y = list(relation = "free")),
+            plot = "density", pch = "|",
+            auto.key = list(columns = 2))
+```
+
+## Divide data into training and test sets
+```{r}
+set.seed(1)
+rowTrain <- createDataPartition(y = dat$diabetes,
+                                p = 0.75,
+                                list = FALSE)
+```
+
+## Logistic regression and its cousins
+
+### use `glm`
+```{r}
+contrasts(dat$diabetes)
+glm.fit <- glm(diabetes ~ .,
+               data = dat,
+               subset = rowTrain,
+               family = binomial(link = "logit"))
+
+summary(glm.fit)
+```
+
+### 2X2 contingency table
+```{r}
+test.pred.prob <- predict(glm.fit, newdata = dat[-rowTrain,],
+                          type = "response")
+test.pred <- rep("neg", length(test.pred.prob))
+test.pred[test.pred.prob > 0.5] <- "pos"
+test.pred
+
+confusionMatrix(data = as.factor(test.pred),
+                reference = dat$diabetes[-rowTrain],
+                positive = "pos")
+```
+
+### ROC curve
+```{r}
+roc.glm <- roc(dat$diabetes[-rowTrain], test.pred.prob)
+plot(roc.glm, legacy.axes = TRUE, print.auc = TRUE)
+plot(smooth(roc.glm), col = 4, add = TRUE)
+```
+
+### Use `caret` to compare CV performance with other models
+```{r}
+ctrl <- trainControl(method = "repeatedcv",
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE)
+set.seed(1)
+model.glm <- train(x = dat[rowTrain, 1:8],
+                   y = dat$diabetes[rowTrain],
+                   method = "glm",
+                   metric = "ROC",
+                   trControl = ctrl)
+```
+
+
+
+
+
+
+
+
+
